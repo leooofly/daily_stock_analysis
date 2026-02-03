@@ -249,7 +249,7 @@ class CommandDispatcher:
         
         if cmd_name is None:
             # [Patch] 纯数字触发逻辑: 如果消息是 5-6 位数字，自动识别为 /analyze 命令
-            text = message.text.strip()
+            text = message.content.strip()
             if text.isdigit() and 5 <= len(text) <= 6:
                 logger.info(f"[Dispatcher] 检测到纯数字股票代码: {text}，自动转换为 analyze 命令")
                 cmd_name = "analyze"  # 或 "a"
