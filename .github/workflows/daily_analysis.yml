@@ -27,7 +27,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     # 添加超时限制，防止任务卡死
-    timeout-minutes: 30
+    timeout-minutes: 120
     
     steps:
       - name: 检出代码
@@ -138,7 +138,7 @@ jobs:
           # 系统配置
           # ==========================================
           LOG_LEVEL: INFO
-          MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '1' }}
+          MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '5' }}
           # GitHub Actions 环境建议关闭不稳定的数据源
           ENABLE_CHIP_DISTRIBUTION: 'false'
           # 实时行情数据源优先级（腾讯有量比且稳定，推荐首选）
