@@ -30,6 +30,65 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
+# 企业微信URL验证处理
+# ============================================================
+
+def handle_wecom_verify(query_params: Dict[str, list]) -> Response:
+    """
+    处理企业微信URL验证请求
+    
+    企业微信在配置回调URL时会发送GET请求验证：
+    - msg_signature: 签名
+    - timestamp: 时间戳
+    - nonce: 随机数
+    - echostr: 加密的随机字符串
+    
+    需要解密echostr并返回明文
+    """
+    try:
+        from bot.platforms.wecom import get_wecom_platform
+        from src.config import get_config
+        
+        config = get_config()
+        
+        # 获取企业微信平台实例
+        wecom = get_wecom_platform(
+            corp_id=config.wecom_corp_id,
+            agent_id=str(config.wecom_agent_id),
+            secret=config.wecom_secret,
+            token=config.wecom_token,
+            encoding_aes_key=config.wecom_encoding_aes_key
+        )
+        
+        if not wecom:
+            logger.error("[WeCom] 企业微信平台初始化失败")
+            return Response(b'platform init failed', status=HTTPStatus.INTERNAL_SERVER_ERROR, content_type='text/plain')
+        
+        # 提取验证参数
+        msg_signature = query_params.get('msg_signature', [''])[0]
+        timestamp = query_params.get('timestamp', [''])[0]
+        nonce = query_params.get('nonce', [''])[0]
+        echostr = query_params.get('echostr', [''])[0]
+        
+        if not all([msg_signature, timestamp, nonce, echostr]):
+            logger.warning("[WeCom] URL验证参数不完整")
+            return Response(b'missing parameters', status=HTTPStatus.BAD_REQUEST, content_type='text/plain')
+        
+        # 验证URL
+        result = wecom.verify_url(msg_signature, timestamp, nonce, echostr)
+        
+        if result:
+            logger.info("[WeCom] URL验证成功")
+            return Response(result.encode('utf-8'), status=HTTPStatus.OK, content_type='text/plain')
+        else:
+            logger.error("[WeCom] URL验证失败")
+            return Response(b'verification failed', status=HTTPStatus.FORBIDDEN, content_type='text/plain')
+    
+    except Exception as e:
+        logger.exception(f"[WeCom] URL验证异常: {e}")
+        return Response(str(e).encode('utf-8'), status=HTTPStatus.INTERNAL_SERVER_ERROR, content_type='text/plain')
+
+# ============================================================
 # 路由定义
 # ============================================================
 
@@ -341,12 +400,19 @@ def create_default_router() -> Router:
         "钉钉机器人 Webhook"
     )
     
-    # 企业微信机器人 Webhook（开发中）
-    # router.register(
-    #     "/bot/wecom", "POST",
-    #     lambda form: JsonResponse({"error": "Use POST with JSON body"}),
-    #     "企业微信机器人 Webhook"
-    # )
+    # 企业微信机器人 Webhook
+    router.register(
+        "/bot/wecom", "POST",
+        lambda form: JsonResponse({"error": "Use POST with JSON body"}),
+        "企业微信机器人 Webhook"
+    )
+    
+    # 企业微信 URL验证（GET请求）
+    router.register(
+        "/bot/wecom", "GET",
+        lambda q: handle_wecom_verify(q),
+        "企业微信 URL验证"
+    )
     
     # Telegram 机器人 Webhook（开发中）
     # router.register(

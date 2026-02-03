@@ -19,6 +19,16 @@ ALL_PLATFORMS = {
     'dingtalk': DingtalkPlatform,
 }
 
+# 企业微信 Webhook 模式（可选）
+try:
+    from bot.platforms.wecom import WeComPlatform, is_wecom_available, WECOM_SDK_AVAILABLE
+    if is_wecom_available():
+        ALL_PLATFORMS['wecom'] = WeComPlatform
+except ImportError:
+    WECOM_SDK_AVAILABLE = False
+    WeComPlatform = None
+    is_wecom_available = lambda: False
+
 # 钉钉 Stream 模式（可选）
 try:
     from bot.platforms.dingtalk_stream import (
