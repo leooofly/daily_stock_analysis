@@ -248,14 +248,21 @@ class CommandDispatcher:
         cmd_name, args = message.get_command_and_args(self.command_prefix)
         
         if cmd_name is None:
-            # 不是命令，检查是否 @了机器人
-            if message.mentioned:
-                return BotResponse.text_response(
-                    "你好！我是股票分析助手。\n"
-                    f"发送 `{self.command_prefix}help` 查看可用命令。"
-                )
-            # 非命令消息，不处理
-            return BotResponse.text_response("")
+            # [Patch] 纯数字触发逻辑: 如果消息是 5-6 位数字，自动识别为 /analyze 命令
+            text = message.text.strip()
+            if text.isdigit() and 5 <= len(text) <= 6:
+                logger.info(f"[Dispatcher] 检测到纯数字股票代码: {text}，自动转换为 analyze 命令")
+                cmd_name = "analyze"  # 或 "a"
+                args = [text]         # 将数字作为参数
+            else:
+                # 不是命令，检查是否 @了机器人
+                if message.mentioned:
+                    return BotResponse.text_response(
+                        "你好！我是股票分析助手。\n"
+                        "您可以直接发送股票代码（如 600519），或发送 `/help` 查看更多命令。"
+                    )
+                # 非命令消息，不处理
+                return BotResponse.text_response("")
         
         logger.info(f"[Dispatcher] 收到命令: {cmd_name}, 参数: {args}, 用户: {message.user_name}")
         
