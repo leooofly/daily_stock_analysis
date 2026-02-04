@@ -146,6 +146,10 @@ jobs:
           # 如果有 Tushare Pro 高积分账号，可将 tushare 放在首位
           REALTIME_SOURCE_PRIORITY: ${{ vars.REALTIME_SOURCE_PRIORITY || 'tencent,akshare_sina,efinance,akshare_em' }}
           
+          # ==========================================
+          # 多用户配置 (从 Variables 读取，方便查看和修改)
+          MULTI_USER_CONFIG: ${{ vars.MULTI_USER_CONFIG }}
+          
         run: |
           # 判断运行模式
           MODE="${{ github.event.inputs.mode || 'full' }}"
@@ -179,13 +183,20 @@ jobs:
           echo "=========================================="
           echo ""
           
-          # 执行分析
-          if [ "$MODE" = "market-only" ]; then
-            python main.py --market-review
-          elif [ "$MODE" = "stocks-only" ]; then
-            python main.py --no-market-review
+          # 执行逻辑：优先尝试批处理，否则执行单次分析
+          if [ -n "$MULTI_USER_CONFIG" ] && [ "$MULTI_USER_CONFIG" != "[]" ]; then
+            echo "🚀 检测到多用户配置，启动批处理模式..."
+            python batch_runner.py
           else
-            python main.py
+            echo "👤 单用户模式运行..."
+            # 执行分析
+            if [ "$MODE" = "market-only" ]; then
+              python main.py --market-review
+            elif [ "$MODE" = "stocks-only" ]; then
+              python main.py --no-market-review
+            else
+              python main.py
+            fi
           fi
       
       - name: 上传分析报告
