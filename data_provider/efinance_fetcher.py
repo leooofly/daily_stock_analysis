@@ -672,6 +672,67 @@ class EfinanceFetcher(BaseFetcher):
         
         return result
 
+    def get_market_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        获取市场涨跌统计
+        
+        策略：
+        1. 获取所有股票实时行情
+        2. 本地计算涨跌家数、成交额
+        3. 返回统计结果
+        """
+        import efinance as ef
+        
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            
+            # 获取全市场实时行情
+            df = ef.stock.get_realtime_quotes()
+            
+            if df is None or df.empty:
+                logger.warning("[Efinance] 获取全市场行情为空")
+                return None
+            
+            # 兼容不同版本的列名
+            change_col = '涨跌幅' if '涨跌幅' in df.columns else 'pct_chg'
+            amount_col = '成交额' if '成交额' in df.columns else 'amount'
+            
+            if change_col not in df.columns:
+                logger.warning(f"[Efinance] 缺少涨跌幅列: {df.columns}")
+                return None
+                
+            # 确保是数值类型
+            df[change_col] = pd.to_numeric(df[change_col], errors='coerce').fillna(0)
+            df[amount_col] = pd.to_numeric(df[amount_col], errors='coerce').fillna(0)
+            
+            up_count = len(df[df[change_col] > 0])
+            down_count = len(df[df[change_col] < 0])
+            flat_count = len(df[df[change_col] == 0])
+            
+            # 估算涨跌停（粗略：>9.9% / <-9.9%）
+            # 注意：创业板/科创板是 20%，北交所 30%，这里仅做近似统计
+            limit_up_count = len(df[df[change_col] >= 9.9])
+            limit_down_count = len(df[df[change_col] <= -9.9])
+            
+            total_amount = df[amount_col].sum() / 1e8  # 转为亿元
+            
+            stats = {
+                'up_count': up_count,
+                'down_count': down_count,
+                'flat_count': flat_count,
+                'limit_up_count': limit_up_count,
+                'limit_down_count': limit_down_count,
+                'total_amount': total_amount
+            }
+            
+            logger.info(f"[Efinance] 市场统计: 涨{up_count}/跌{down_count}, 成交{total_amount:.1f}亿")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"[Efinance] 获取市场统计失败: {e}")
+            return None
+
 
 if __name__ == "__main__":
     # 测试代码
@@ -726,3 +787,16 @@ if __name__ == "__main__":
             print("[基本信息] 未获取到数据")
     except Exception as e:
         print(f"[基本信息] 获取失败: {e}")
+        
+    # 测试市场统计
+    print("\n" + "=" * 50)
+    print("测试市场统计 (efinance)")
+    print("=" * 50)
+    try:
+        stats = fetcher.get_market_stats()
+        if stats:
+            print(f"[市场统计] 涨:{stats['up_count']} 跌:{stats['down_count']} 成交:{stats['total_amount']:.1f}亿")
+        else:
+            print("[市场统计] 未获取到数据")
+    except Exception as e:
+        print(f"[市场统计] 获取失败: {e}")
