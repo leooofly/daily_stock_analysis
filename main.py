@@ -381,9 +381,13 @@ def main() -> int:
         try:
             from webui import run_server_in_thread
             run_server_in_thread(host=config.webui_host, port=config.webui_port)
-            start_bot_stream_clients(config)
         except Exception as e:
             logger.error(f"启动 WebUI 失败: {e}")
+
+    # === 启动机器人客户端 (Stream 模式) ===
+    # 只要启用了机器人且配置了 Stream 模式，就启动监听
+    if config.bot_enabled:
+        start_bot_stream_clients(config)
     
     # === 仅 WebUI 模式：不自动执行分析 ===
     if args.webui_only:
