@@ -203,7 +203,7 @@ class StockAnalysisPipeline:
                     raw_data = context['raw_data']
                     if isinstance(raw_data, list) and len(raw_data) > 0:
                         df = pd.DataFrame(raw_data)
-                        trend_result = self.trend_analyzer.analyze(df, code)
+                        trend_result = self.trend_analyzer.analyze(df, code, chip_data=chip_data)
                         logger.info(f"[{code}] 趋势分析: {trend_result.trend_status.value}, "
                                   f"买入信号={trend_result.buy_signal.value}, 评分={trend_result.signal_score}")
             except Exception as e:

@@ -827,6 +827,76 @@ class AkshareFetcher(BaseFetcher):
             circuit_breaker.record_failure(source_key, str(e))
             return None
     
+    def get_chip_distribution(self, stock_code: str) -> Optional[ChipDistribution]:
+        """
+        获取筹码分布数据
+        
+        数据来源：ak.stock_cyq_em(symbol=code, adjust='qfq')
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            ChipDistribution 对象，获取失败返回 None
+        """
+        # 美股/港股/ETF 不支持筹码分布
+        if _is_us_code(stock_code) or _is_hk_code(stock_code) or _is_etf_code(stock_code):
+            return None
+            
+        import akshare as ak
+        circuit_breaker = get_chip_circuit_breaker()
+        source_key = "akshare_chip"
+        
+        if not circuit_breaker.is_available(source_key):
+            logger.warning(f"[熔断] 筹码接口处于熔断状态，跳过")
+            return None
+            
+        try:
+            # 防封禁策略
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            
+            logger.info(f"[API调用] ak.stock_cyq_em(symbol={stock_code}, adjust=qfq) 获取筹码分布...")
+            import time as _time
+            api_start = _time.time()
+            
+            # 获取筹码数据（返回 DataFrame，包含历史每一天）
+            df = ak.stock_cyq_em(symbol=stock_code, adjust="qfq")
+            
+            api_elapsed = _time.time() - api_start
+            
+            if df is not None and not df.empty:
+                # 取最新一条数据
+                latest = df.iloc[-1]
+                logger.info(f"[API返回] ak.stock_cyq_em 成功: {latest['日期']}, 获利比例 {latest['获利比例']:.2f}")
+                
+                chip_data = ChipDistribution(
+                    code=stock_code,
+                    date=str(latest['日期']),
+                    source="akshare_em",
+                    profit_ratio=safe_float(latest['获利比例'], 0.0),
+                    avg_cost=safe_float(latest['平均成本'], 0.0),
+                    
+                    cost_90_low=safe_float(latest['90成本-低'], 0.0),
+                    cost_90_high=safe_float(latest['90成本-高'], 0.0),
+                    concentration_90=safe_float(latest['90集中度'], 0.0),
+                    
+                    cost_70_low=safe_float(latest['70成本-低'], 0.0),
+                    cost_70_high=safe_float(latest['70成本-高'], 0.0),
+                    concentration_70=safe_float(latest['70集中度'], 0.0),
+                )
+                
+                circuit_breaker.record_success(source_key)
+                return chip_data
+            else:
+                logger.warning(f"[API返回] ak.stock_cyq_em 返回空数据")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[筹码分布] 获取失败: {e}")
+            circuit_breaker.record_failure(source_key, str(e))
+            return None
+
     def _get_stock_realtime_quote_sina(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取普通 A 股实时行情数据（新浪财经数据源）

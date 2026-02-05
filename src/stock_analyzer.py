@@ -23,6 +23,7 @@ from enum import Enum
 
 import pandas as pd
 import numpy as np
+from data_provider.realtime_types import ChipDistribution
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,11 @@ class TrendAnalysisResult:
     signal_reasons: List[str] = field(default_factory=list)
     risk_factors: List[str] = field(default_factory=list)
     
+    # 筹码分布
+    chip_data: Optional[ChipDistribution] = None
+    chip_score: int = 0
+    chip_status: str = ""
+    
     def to_dict(self) -> Dict[str, Any]:
         return {
             'code': self.code,
@@ -163,6 +169,10 @@ class TrendAnalysisResult:
             'rsi_24': self.rsi_24,
             'rsi_status': self.rsi_status.value,
             'rsi_signal': self.rsi_signal,
+            'rsi_status': self.rsi_status.value,
+            'rsi_signal': self.rsi_signal,
+            'chip_score': self.chip_score,
+            'chip_status': self.chip_status,
         }
 
 
@@ -201,18 +211,19 @@ class StockTrendAnalyzer:
         """初始化分析器"""
         pass
     
-    def analyze(self, df: pd.DataFrame, code: str) -> TrendAnalysisResult:
+    def analyze(self, df: pd.DataFrame, code: str, chip_data: Optional[ChipDistribution] = None) -> TrendAnalysisResult:
         """
         分析股票趋势
         
         Args:
             df: 包含 OHLCV 数据的 DataFrame
             code: 股票代码
+            chip_data: 筹码分布数据（可选）
             
         Returns:
             TrendAnalysisResult 分析结果
         """
-        result = TrendAnalysisResult(code=code)
+        result = TrendAnalysisResult(code=code, chip_data=chip_data)
         
         if df is None or df.empty or len(df) < 20:
             logger.warning(f"{code} 数据不足，无法进行趋势分析")
@@ -255,7 +266,11 @@ class StockTrendAnalyzer:
         # 6. RSI 分析
         self._analyze_rsi(df, result)
 
-        # 7. 生成买入信号
+        # 7. 筹码分布分析
+        if chip_data:
+            self._analyze_chip_distribution(chip_data, result)
+
+        # 8. 生成买入信号
         self._generate_signal(result)
 
         return result
@@ -579,6 +594,76 @@ class StockTrendAnalyzer:
             result.rsi_status = RSIStatus.OVERSOLD
             result.rsi_signal = f"⭐ RSI超卖({rsi_mid:.1f}<30)，反弹机会大"
 
+    def _analyze_chip_distribution(self, chip: ChipDistribution, result: TrendAnalysisResult) -> None:
+        """
+        分析筹码分布
+        
+        评分标准（15分）：
+        - 获利盘比例 > 90% (主力控盘): +15分
+        - 获利盘比例 > 50% (相对安全): +10分
+        - 获利盘比例 < 10% (超跌反弹): +5分
+        - 90%集中度 < 10% (高度集中): +5分
+        """
+        score = 0
+        desc = []
+        
+        # 1. 获利盘分析
+        if chip.profit_ratio > 0.9:
+            score += 15
+            desc.append(f"主力高度控盘(获利盘{chip.profit_ratio:.0%})")
+            result.signal_reasons.append(f"⭐ 筹码锁定良好，获利盘>{chip.profit_ratio:.0%}")
+        elif chip.profit_ratio > 0.5:
+            score += 10
+            desc.append(f"获利盘占优({chip.profit_ratio:.0%})")
+        elif chip.profit_ratio < 0.05:
+            score += 8
+            desc.append(f"极度超跌(获利盘{chip.profit_ratio:.0%})")
+            result.signal_reasons.append(f"⚡ 筹码超跌，反弹一触即发")
+        else:
+            score += 5
+            desc.append(f"获利盘一般({chip.profit_ratio:.0%})")
+            
+        # 2. 集中度分析（8%-15%区间评分，越高越好）
+        concentration_pct = chip.concentration_90 * 100  # 转换为百分比
+        
+        if concentration_pct < 8:
+            # 筹码分散，不加分
+            concentration_score = 0
+            desc.append(f"筹码分散(集中度{concentration_pct:.1f}%<8%)")
+        elif concentration_pct > 15:
+            # 超出正常范围，不加分
+            concentration_score = 0
+            desc.append(f"集中度异常(集中度{concentration_pct:.1f}%>15%)")
+        else:
+            # 8%-15%区间，分段评分
+            if concentration_pct >= 15:
+                concentration_score = 5
+                desc.append(f"筹码高度集中(集中度15%)")
+                result.signal_reasons.append(f"⭐ 筹码峰极度密集，主力高度控盘")
+            elif concentration_pct >= 14:
+                concentration_score = 4
+                desc.append(f"筹码集中良好(集中度{concentration_pct:.1f}%)")
+                result.signal_reasons.append(f"✅ 筹码集中度佳，主力吸筹完成")
+            elif concentration_pct >= 12:
+                concentration_score = 3
+                desc.append(f"筹码较集中(集中度{concentration_pct:.1f}%)")
+            elif concentration_pct >= 10:
+                concentration_score = 2
+                desc.append(f"筹码一般集中(集中度{concentration_pct:.1f}%)")
+            else:  # >= 8
+                concentration_score = 1
+                desc.append(f"筹码初步集中(集中度{concentration_pct:.1f}%)")
+        
+        score += concentration_score
+        
+        # 额外风险提示（筹码过度分散）
+        if concentration_pct > 30:
+            result.risk_factors.append(f"⚠️ 筹码严重发散，上方套牢盘重")
+
+            
+        result.chip_score = min(score, 15)  # 上限15分
+        result.chip_status = "，".join(desc)
+
     def _generate_signal(self, result: TrendAnalysisResult) -> None:
         """
         生成买入信号
@@ -592,8 +677,8 @@ class StockTrendAnalyzer:
         - RSI（10分）：超卖和强势得分高
         """
         score = 0
-        reasons = []
-        risks = []
+        reasons = list(result.signal_reasons)
+        risks = list(result.risk_factors)
 
         # === 趋势评分（30分）===
         trend_scores = {
@@ -606,7 +691,11 @@ class StockTrendAnalyzer:
             TrendStatus.STRONG_BEAR: 0,
         }
         trend_score = trend_scores.get(result.trend_status, 12)
+        trend_score = trend_scores.get(result.trend_status, 12)
         score += trend_score
+
+        # === 筹码评分（15分）===
+        score += result.chip_score
 
         if result.trend_status in [TrendStatus.STRONG_BULL, TrendStatus.BULL]:
             reasons.append(f"✅ {result.trend_status.value}，顺势做多")
@@ -759,6 +848,12 @@ class StockTrendAnalyzer:
             f"🎯 操作建议: {result.buy_signal.value}",
             f"   综合评分: {result.signal_score}/100",
         ]
+        
+        if result.chip_data:
+            lines.insert(25, f"💰 筹码分布: {result.chip_status}")
+            lines.insert(26, f"   获利比例: {result.chip_data.profit_ratio:.1%}")
+            lines.insert(27, f"   90%集中度: {result.chip_data.concentration_90:.1%}")
+            lines.insert(28, f"")
 
         if result.signal_reasons:
             lines.append(f"")
