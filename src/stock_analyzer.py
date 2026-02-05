@@ -607,23 +607,23 @@ class StockTrendAnalyzer:
         score = 0
         desc = []
         
-        # 1. 获利盘分析
+        # 1. 获利盘分析（客观描述，不判断主力行为）
         if chip.profit_ratio > 0.9:
-            score += 15
-            desc.append(f"主力高度控盘(获利盘{chip.profit_ratio:.0%})")
-            result.signal_reasons.append(f"⭐ 筹码锁定良好，获利盘>{chip.profit_ratio:.0%}")
-        elif chip.profit_ratio > 0.5:
             score += 10
+            desc.append(f"高获利盘(获利盘{chip.profit_ratio:.0%})")
+            result.signal_reasons.append(f"✅ 市场整体获利丰厚({chip.profit_ratio:.0%})，持仓稳定性较好")
+        elif chip.profit_ratio > 0.5:
+            score += 7
             desc.append(f"获利盘占优({chip.profit_ratio:.0%})")
         elif chip.profit_ratio < 0.05:
-            score += 8
+            score += 6
             desc.append(f"极度超跌(获利盘{chip.profit_ratio:.0%})")
-            result.signal_reasons.append(f"⚡ 筹码超跌，反弹一触即发")
+            result.signal_reasons.append(f"⚡ 市场整体深度套牢，存在超跌反弹可能")
         else:
-            score += 5
+            score += 3
             desc.append(f"获利盘一般({chip.profit_ratio:.0%})")
             
-        # 2. 集中度分析（8%-15%区间评分，越高越好）
+        # 2. 集中度分析（8%-15%区间梯度评分，最高10分）
         concentration_pct = chip.concentration_90 * 100  # 转换为百分比
         
         if concentration_pct < 8:
@@ -635,23 +635,23 @@ class StockTrendAnalyzer:
             concentration_score = 0
             desc.append(f"集中度异常(集中度{concentration_pct:.1f}%>15%)")
         else:
-            # 8%-15%区间，分段评分
+            # 8%-15%区间，梯度评分（2-10分）
             if concentration_pct >= 15:
-                concentration_score = 5
+                concentration_score = 10
                 desc.append(f"筹码高度集中(集中度15%)")
-                result.signal_reasons.append(f"⭐ 筹码峰极度密集，主力高度控盘")
+                result.signal_reasons.append(f"⭐ 筹码高度集中(15%)，波动可能加大")
             elif concentration_pct >= 14:
-                concentration_score = 4
-                desc.append(f"筹码集中良好(集中度{concentration_pct:.1f}%)")
-                result.signal_reasons.append(f"✅ 筹码集中度佳，主力吸筹完成")
+                concentration_score = 8
+                desc.append(f"筹码集中度佳(集中度{concentration_pct:.1f}%)")
+                result.signal_reasons.append(f"✅ 筹码较集中({concentration_pct:.1f}%)")
             elif concentration_pct >= 12:
-                concentration_score = 3
+                concentration_score = 6
                 desc.append(f"筹码较集中(集中度{concentration_pct:.1f}%)")
             elif concentration_pct >= 10:
-                concentration_score = 2
+                concentration_score = 4
                 desc.append(f"筹码一般集中(集中度{concentration_pct:.1f}%)")
             else:  # >= 8
-                concentration_score = 1
+                concentration_score = 2
                 desc.append(f"筹码初步集中(集中度{concentration_pct:.1f}%)")
         
         score += concentration_score
@@ -661,7 +661,7 @@ class StockTrendAnalyzer:
             result.risk_factors.append(f"⚠️ 筹码严重发散，上方套牢盘重")
 
             
-        result.chip_score = min(score, 15)  # 上限15分
+        result.chip_score = min(score, 20)  # 上限20分
         result.chip_status = "，".join(desc)
 
     def _generate_signal(self, result: TrendAnalysisResult) -> None:
